@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Walkie Talkie</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <h2>Walkie Talkie</h2>
+  <label>Channel:
+    <input type="text" id="channel" placeholder="e.g., kitchen" />
+  </label>
+  <button onclick="joinChannel()">Join Channel</button>
+  <br><br>
+  <button id="startBtn" onclick="startSending()">🎙️ Hold to Talk</button>
+  <div id="log"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
