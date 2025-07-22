@@ -1,62 +1,83 @@
-let ws;
-let channel = '';
+let socket;
 let mediaRecorder;
+let username;
+let channel;
+let userId = 'user-' + Math.random().toString(36).substring(2, 9);
 
-function log(msg) {
-  const logDiv = document.getElementById('log');
-  logDiv.innerHTML += `<div>${msg}</div>`;
-}
+// Replace this with your deployed backend WebSocket URL
+const SERVER_URL = 'wss://your-backend.onrender.com';
 
 function joinChannel() {
-  channel = document.getElementById('channel').value.trim();
-  if (!channel) return alert('Enter a channel name.');
+  username = document.getElementById('username').value;
+  channel = document.getElementById('channel').value;
 
-  ws = new WebSocket('wss://walkie-talkie-server-9yu3.onrender.com');
-  ws.onopen = () => {
-    ws.send(JSON.stringify({ type: 'join', channel }));
-    log(`✅ Joined channel: ${channel}`);
-  };
-
-  ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    if (data.type === 'audio') {
-      const audio = new Audio(URL.createObjectURL(new Blob([new Uint8Array(data.blob)])));
-      audio.play();
-    }
-  };
-
-  ws.onclose = () => log('❌ Disconnected');
-  ws.onerror = () => log('⚠️ Connection error');
-}
-
-async function startSending() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    alert('Join a channel first.');
+  if (!username || !channel) {
+    alert('Enter your name and channel');
     return;
   }
 
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  mediaRecorder = new MediaRecorder(stream);
+  socket = new WebSocket(SERVER_URL);
 
-  mediaRecorder.ondataavailable = (e) => {
-    if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-      e.data.arrayBuffer().then(buf => {
-        ws.send(JSON.stringify({
-          type: 'audio',
-          channel,
-          blob: Array.from(new Uint8Array(buf))
-        }));
+  socket.onopen = () => {
+    socket.send(JSON.stringify({ type: 'join', channel, username, userId }));
+    document.getElementById('currentChannel').innerText = `Connected to #${channel}`;
+  };
+
+  socket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+
+    if (data.type === 'audio' && data.userId !== userId) {
+      const audio = new Audio(data.audio);
+      audio.play();
+    }
+
+    if (data.type === 'userList') {
+      const ul = document.getElementById('userList');
+      ul.innerHTML = '';
+      data.users.forEach(user => {
+        const li = document.createElement('li');
+        li.innerText = user.username;
+        ul.appendChild(li);
       });
     }
   };
 
-  mediaRecorder.start(250); // record in chunks
-  document.getElementById('startBtn').innerText = '🛑 Stop';
-  document.getElementById('startBtn').onclick = stopSending;
+  socket.onclose = () => {
+    console.log('Disconnected');
+  };
 }
 
-function stopSending() {
-  mediaRecorder.stop();
-  document.getElementById('startBtn').innerText = '🎙️ Hold to Talk';
-  document.getElementById('startBtn').onclick = startSending;
+function leaveChannel() {
+  if (socket) {
+    socket.send(JSON.stringify({ type: 'leave', channel, userId }));
+    socket.close();
+    document.getElementById('userList').innerHTML = '';
+    document.getElementById('currentChannel').innerText = '';
+  }
+}
+
+function startTalking() {
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64Audio = reader.result.split(',')[1];
+        socket.send(JSON.stringify({
+          type: 'audio',
+          audio: `data:audio/webm;base64,${base64Audio}`,
+          channel,
+          userId
+        }));
+      };
+      reader.readAsDataURL(e.data);
+    };
+    mediaRecorder.start(500);
+  });
+}
+
+function stopTalking() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
 }
