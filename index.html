@@ -1,28 +1,22 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Walkie Talkie PWA</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="manifest" href="manifest.json">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Walkie Talkie Test</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Walkie Talkie</h1>
+    <div class="container">
+        <h1>Walkie Talkie Connection Test</h1>
+        <p>Connection Status: <strong id="status">Connecting...</strong></p>
+        <p>Message from Server: <strong id="server-message"></strong></p>
+    </div>
 
-  <label>Your Name: <input type="text" id="username" /></label><br>
-  <label>Channel Name: <input type="text" id="channel" /></label><br>
-  <button onclick="joinChannel()">Join Channel</button>
-  <button onclick="leaveChannel()">Leave Channel</button>
-
-  <h3 id="currentChannel"></h3>
-  <div>
-    <strong>Online Users:</strong>
-    <ul id="userList"></ul>
-  </div>
-
-  <button onclick="startTalking()">Start Talking</button>
-  <button onclick="stopTalking()">Stop Talking</button>
-
-  <script src="script.js"></script>
+    <!-- This line adds the required library for socket.io -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    
+    <!-- This line links to your own javascript file -->
+    <script src="script.js"></script>
 </body>
 </html>
