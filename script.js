@@ -1,7 +1,7 @@
 // --- CONFIGURATION ---
 const SERVER_URL = "https://walkie-talkie-server-9yu3.onrender.com";
 const CHANNELS = ["General", "Project Alpha", "Emergency", "Music Room"];
-const STORAGE_KEY = 'walkie_talkie_channels'; // NEW: Key for localStorage
+const STORAGE_KEY = 'walkie_talkie_channels';
 
 // --- DOM ELEMENTS ---
 const statusTextElement = document.getElementById('status-text');
@@ -12,6 +12,7 @@ const channelsListElement = document.getElementById('channels-list');
 const socket = io(SERVER_URL);
 let mediaRecorder;
 let audioChunks = [];
+let activeRecordingChannel = null; // To store the channel being recorded
 
 // --- INITIALIZATION ---
 function initialize() {
@@ -20,16 +21,13 @@ function initialize() {
     initializeMediaRecorder();
 }
 
-// MODIFIED: This function now restores the saved state
 function populateChannels() {
-    const savedChannels = getSavedChannels(); // NEW: Get saved state
+    const savedChannels = getSavedChannels();
     CHANNELS.forEach(channel => {
-        const isChecked = savedChannels.includes(channel); // NEW: Check if this channel was saved
+        const isChecked = savedChannels.includes(channel);
         const item = document.createElement('li');
         item.className = 'channel-item';
-        if (isChecked) {
-            item.classList.add('active'); // NEW: Set active class if saved
-        }
+        if (isChecked) item.classList.add('active');
         item.id = `channel-${channel}`;
         item.innerHTML = `
             <span class="channel-name">${channel}</span>
@@ -47,16 +45,11 @@ function populateChannels() {
 }
 
 // --- SOCKET.IO LISTENERS ---
-// MODIFIED: This function now joins the saved channels on connect
 function setupSocketListeners() {
     socket.on('connect', () => {
         statusTextElement.textContent = 'Connected';
         statusLightElement.className = 'status-light connected';
-        // NEW: Join previously saved channels upon connecting
-        const savedChannels = getSavedChannels();
-        savedChannels.forEach(channel => {
-            socket.emit('join-channel', channel);
-        });
+        getSavedChannels().forEach(channel => socket.emit('join-channel', channel));
     });
 
     socket.on('disconnect', () => {
@@ -69,11 +62,9 @@ function setupSocketListeners() {
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
         audio.play();
-        
         const channelItem = document.getElementById(`channel-${channel}`);
         channelItem.classList.add('receiving');
         statusLightElement.classList.add('receiving');
-        
         audio.onended = () => {
             channelItem.classList.remove('receiving');
             statusLightElement.classList.remove('receiving');
@@ -81,50 +72,60 @@ function setupSocketListeners() {
     });
 }
 
-// --- MEDIA RECORDER LOGIC (No changes here) ---
+// --- MEDIA RECORDER LOGIC (Refactored) ---
 async function initializeMediaRecorder() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
-        mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+
+        mediaRecorder.ondataavailable = event => {
+            audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = () => {
+            if (!activeRecordingChannel) return;
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            socket.emit('audio-message', activeRecordingChannel, audioBlob);
+            audioChunks = [];
+            activeRecordingChannel = null;
+        };
     } catch (error) {
         console.error("Error accessing microphone:", error);
         statusTextElement.textContent = 'Microphone access denied.';
     }
 }
 
-// --- EVENT LISTENERS (No changes here) ---
+// --- EVENT LISTENERS ---
 function setupActionListeners() {
-    channelsListElement.addEventListener('change', (event) => {
-        if (event.target.classList.contains('channel-toggle')) {
-            handleChannelToggle(event.target);
-        }
+    channelsListElement.addEventListener('change', e => {
+        if (e.target.classList.contains('channel-toggle')) handleChannelToggle(e.target);
     });
-    // ... all other listeners remain the same
-    channelsListElement.addEventListener('mousedown', (event) => {
-        const button = event.target.closest('.talk-button');
+    channelsListElement.addEventListener('mousedown', e => {
+        const button = e.target.closest('.talk-button');
         if (button) startRecording(button);
     });
-    channelsListElement.addEventListener('mouseup', (event) => {
-        const button = event.target.closest('.talk-button');
+    channelsListElement.addEventListener('mouseup', e => {
+        const button = e.target.closest('.talk-button');
         if (button) stopRecording(button);
     });
-    channelsListElement.addEventListener('touchstart', (e) => {
+    channelsListElement.addEventListener('mouseleave', e => { // Stop if mouse leaves button while pressed
+         const button = e.target.closest('.talk-button');
+        if (button && mediaRecorder.state === 'recording') stopRecording(button);
+    });
+    channelsListElement.addEventListener('touchstart', e => {
          const button = e.target.closest('.talk-button');
          if(button) { e.preventDefault(); startRecording(button); }
     });
-    channelsListElement.addEventListener('touchend', (e) => {
+    channelsListElement.addEventListener('touchend', e => {
         const button = e.target.closest('.talk-button');
         if(button) stopRecording(button);
     });
 }
 
-// MODIFIED: This function now saves the state to localStorage
 function handleChannelToggle(toggle) {
     const channel = toggle.dataset.channel;
     const channelItem = toggle.closest('.channel-item');
     const talkButton = channelItem.querySelector('.talk-button');
-
     if (toggle.checked) {
         socket.emit('join-channel', channel);
         talkButton.disabled = false;
@@ -134,22 +135,18 @@ function handleChannelToggle(toggle) {
         talkButton.disabled = true;
         channelItem.classList.remove('active');
     }
-    saveActiveChannels(); // NEW: Save the state whenever a toggle changes
+    saveActiveChannels();
 }
 
-// --- RECORDING FUNCTIONS (No changes here) ---
+// --- RECORDING FUNCTIONS (Refactored) ---
 function startRecording(button) {
-    if (!mediaRecorder || button.disabled) return;
-    const channel = button.dataset.channel;
-    mediaRecorder.onstop = () => { 
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        socket.emit('audio-message', channel, audioBlob);
-        audioChunks = [];
-    };
+    if (!mediaRecorder || button.disabled || mediaRecorder.state === 'recording') return;
+    activeRecordingChannel = button.dataset.channel;
     mediaRecorder.start();
     button.classList.add('recording');
     button.querySelector('i').className = 'fa-solid fa-record-vinyl';
 }
+
 function stopRecording(button) {
     if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
     mediaRecorder.stop();
@@ -157,14 +154,10 @@ function stopRecording(button) {
     button.querySelector('i').className = 'fa-solid fa-microphone';
 }
 
-
-// --- NEW HELPER FUNCTIONS FOR LOCAL STORAGE ---
+// --- LOCAL STORAGE HELPERS ---
 function saveActiveChannels() {
-    const activeChannels = [];
-    const toggles = document.querySelectorAll('.channel-toggle:checked');
-    toggles.forEach(toggle => {
-        activeChannels.push(toggle.dataset.channel);
-    });
+    const activeChannels = Array.from(document.querySelectorAll('.channel-toggle:checked'))
+                                .map(toggle => toggle.dataset.channel);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(activeChannels));
 }
 
