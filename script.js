@@ -12,7 +12,8 @@ const channelsListElement = document.getElementById('channels-list');
 const socket = io(SERVER_URL);
 let mediaRecorder;
 let audioChunks = [];
-let activeRecordingChannel = null; // To store the channel being recorded
+let isRecording = false; // Simple flag to track recording state
+let activeRecordingButton = null; // To know which button to update
 
 // --- INITIALIZATION ---
 function initialize() {
@@ -55,6 +56,8 @@ function setupSocketListeners() {
     socket.on('disconnect', () => {
         statusTextElement.textContent = 'Disconnected';
         statusLightElement.className = 'status-light disconnected';
+        // If we disconnect while recording, reset the UI
+        if (isRecording) stopRecording(); 
     });
 
     socket.on('audio-message-from-server', (channel, audioChunk) => {
@@ -72,22 +75,18 @@ function setupSocketListeners() {
     });
 }
 
-// --- MEDIA RECORDER LOGIC (Refactored) ---
+// --- MEDIA RECORDER LOGIC ---
 async function initializeMediaRecorder() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
-
-        mediaRecorder.ondataavailable = event => {
-            audioChunks.push(event.data);
-        };
-
+        mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
         mediaRecorder.onstop = () => {
-            if (!activeRecordingChannel) return;
+            if (!activeRecordingButton) return;
+            const channel = activeRecordingButton.dataset.channel;
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            socket.emit('audio-message', activeRecordingChannel, audioBlob);
+            socket.emit('audio-message', channel, audioBlob);
             audioChunks = [];
-            activeRecordingChannel = null;
         };
     } catch (error) {
         console.error("Error accessing microphone:", error);
@@ -95,31 +94,26 @@ async function initializeMediaRecorder() {
     }
 }
 
-// --- EVENT LISTENERS ---
+// --- EVENT LISTENERS (REBUILT FOR RELIABILITY) ---
 function setupActionListeners() {
+    // Listen for toggles on the whole list
     channelsListElement.addEventListener('change', e => {
         if (e.target.classList.contains('channel-toggle')) handleChannelToggle(e.target);
     });
+    // Listen for mousedown on the whole list
     channelsListElement.addEventListener('mousedown', e => {
         const button = e.target.closest('.talk-button');
         if (button) startRecording(button);
     });
-    channelsListElement.addEventListener('mouseup', e => {
-        const button = e.target.closest('.talk-button');
-        if (button) stopRecording(button);
-    });
-    channelsListElement.addEventListener('mouseleave', e => { // Stop if mouse leaves button while pressed
-         const button = e.target.closest('.talk-button');
-        if (button && mediaRecorder.state === 'recording') stopRecording(button);
-    });
+    // Listen for touchstart on the whole list
     channelsListElement.addEventListener('touchstart', e => {
          const button = e.target.closest('.talk-button');
          if(button) { e.preventDefault(); startRecording(button); }
     });
-    channelsListElement.addEventListener('touchend', e => {
-        const button = e.target.closest('.talk-button');
-        if(button) stopRecording(button);
-    });
+    
+    // --- THE KEY FIX: GLOBAL MOUSEUP AND TOUCHEND LISTENERS ---
+    window.addEventListener('mouseup', stopRecording);
+    window.addEventListener('touchend', stopRecording);
 }
 
 function handleChannelToggle(toggle) {
@@ -134,24 +128,37 @@ function handleChannelToggle(toggle) {
         socket.emit('leave-channel', channel);
         talkButton.disabled = true;
         channelItem.classList.remove('active');
+        if (isRecording && activeRecordingButton === talkButton) {
+            stopRecording(); // Stop recording if user deactivates channel while talking
+        }
     }
     saveActiveChannels();
 }
 
-// --- RECORDING FUNCTIONS (Refactored) ---
+// --- RECORDING FUNCTIONS ---
 function startRecording(button) {
-    if (!mediaRecorder || button.disabled || mediaRecorder.state === 'recording') return;
-    activeRecordingChannel = button.dataset.channel;
+    if (isRecording || !mediaRecorder || button.disabled) return;
+    
+    isRecording = true;
+    activeRecordingButton = button;
     mediaRecorder.start();
+    
     button.classList.add('recording');
     button.querySelector('i').className = 'fa-solid fa-record-vinyl';
 }
 
-function stopRecording(button) {
-    if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
+function stopRecording() {
+    if (!isRecording) return; // Only run if we are actually recording
+    
     mediaRecorder.stop();
-    button.classList.remove('recording');
-    button.querySelector('i').className = 'fa-solid fa-microphone';
+    
+    if (activeRecordingButton) {
+        activeRecordingButton.classList.remove('recording');
+        activeRecordingButton.querySelector('i').className = 'fa-solid fa-microphone';
+    }
+
+    isRecording = false;
+    activeRecordingButton = null;
 }
 
 // --- LOCAL STORAGE HELPERS ---
