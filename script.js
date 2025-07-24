@@ -64,7 +64,7 @@ function setupSocketListeners() {
         statusLightElement.className = 'status-light disconnected';
     });
 
-    socket.on('audio-message-from-server', ({ channel, audioChunk }) => {
+    socket.on('audio-message-from-server', (channel, audioChunk) => {
         const audioBlob = new Blob([audioChunk]);
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
@@ -143,7 +143,7 @@ function startRecording(button) {
     const channel = button.dataset.channel;
     mediaRecorder.onstop = () => { 
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        socket.emit('audio-message', { channel, audioChunk: audioBlob });
+        socket.emit('audio-message', channel, audioBlob);
         audioChunks = [];
     };
     mediaRecorder.start();
