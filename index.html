@@ -3,20 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Walkie Talkie Test</title>
+    <title>Walkie Talkie</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
-        <h1>Walkie Talkie Connection Test</h1>
-        <p>Connection Status: <strong id="status">Connecting...</strong></p>
-        <p>Message from Server: <strong id="server-message"></strong></p>
+        <h1>Walkie Talkie</h1>
+        <p>Status: <strong id="status">Initializing...</strong></p>
+        <button id="talk-button">Push to Talk</button>
     </div>
 
-    <!-- This line adds the required library for socket.io -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    
-    <!-- This line links to your own javascript file -->
     <script src="script.js"></script>
 </body>
 </html>
