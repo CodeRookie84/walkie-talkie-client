@@ -183,4 +183,4 @@ function getSavedChannels() {
 
 initialize();```
 
-Apply these two changes, deploy your server, and the application should now work exactly as you intend.
+
