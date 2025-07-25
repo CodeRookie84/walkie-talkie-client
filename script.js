@@ -3,12 +3,10 @@ const SERVER_URL = "https://walkie-talkie-server-9yu3.onrender.com";
 const CHANNELS = ["General", "Project Alpha", "Emergency", "Music Room"];
 const STORAGE_KEY = 'walkie_talkie_channels';
 
-// --- DOM ELEMENTS ---
+// --- DOM ELEMENTS & STATE ---
 const statusTextElement = document.getElementById('status-text');
 const statusLightElement = document.getElementById('status-light');
 const channelsListElement = document.getElementById('channels-list');
-
-// --- STATE ---
 const socket = io(SERVER_URL);
 let mediaRecorder;
 let audioChunks = [];
@@ -45,7 +43,7 @@ function populateChannels() {
     setupActionListeners();
 }
 
-// --- SOCKET.IO LISTENERS ---
+// --- SOCKET.IO LISTENERS (MODIFIED) ---
 function setupSocketListeners() {
     socket.on('connect', () => {
         statusTextElement.textContent = 'Connected';
@@ -54,18 +52,19 @@ function setupSocketListeners() {
     });
 
     socket.on('disconnect', (reason) => {
-        console.log(`Socket disconnected. Reason: ${reason}`);
         statusTextElement.textContent = 'Disconnected';
         statusLightElement.className = 'status-light disconnected';
         if (isRecording) stopRecording(); 
     });
 
-    socket.on('audio-message-from-server', (channel, audioChunk) => {
-        const audioBlob = new Blob([audioChunk]);
+    // GOING BACK TO THE SIMPLE OBJECT MODEL
+    socket.on('audio-message-from-server', (data) => {
+        // We expect `data` to be { channel: 'General', audioChunk: <...audio...> }
+        const audioBlob = new Blob([data.audioChunk]);
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
         audio.play();
-        const channelItem = document.getElementById(`channel-${channel}`);
+        const channelItem = document.getElementById(`channel-${data.channel}`);
         channelItem.classList.add('receiving');
         statusLightElement.classList.add('receiving');
         audio.onended = () => {
@@ -75,34 +74,27 @@ function setupSocketListeners() {
     });
 }
 
+
 // --- MEDIA RECORDER LOGIC (MODIFIED) ---
 async function initializeMediaRecorder() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
 
-        // MODIFICATION: Specify the MIME type for better compatibility
-        const options = { mimeType: 'audio/ogg; codecs=opus' };
-        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-            console.log(`${options.mimeType} is not supported. Falling back to default.`);
-            mediaRecorder = new MediaRecorder(stream);
-        } else {
-            console.log(`Using supported MIME type: ${options.mimeType}`);
-            mediaRecorder = new MediaRecorder(stream, options);
-        }
-
-        mediaRecorder.ondataavailable = event => {
-            audioChunks.push(event.data);
-        };
-
+        // GOING BACK TO THE SIMPLE OBJECT MODEL
         mediaRecorder.onstop = () => {
             if (!activeRecordingButton) return;
             const channel = activeRecordingButton.dataset.channel;
-            const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
             
-            // FINAL DIAGNOSTIC LOG
-            console.log(`Attempting to send audio. Channel: ${channel}, Blob size: ${audioBlob.size}, MimeType: ${audioBlob.type}`);
-            
-            socket.emit('audio-message', channel, audioBlob);
+            // We are sending ONE object, just like we did before channels,
+            // but now that object contains the channel info.
+            socket.emit('audio-message', {
+                channel: channel,
+                audioChunk: audioBlob
+            });
+
             audioChunks = [];
         };
     } catch (error) {
@@ -111,7 +103,8 @@ async function initializeMediaRecorder() {
     }
 }
 
-// --- EVENT LISTENERS (No change here) ---
+
+// --- EVENT LISTENERS AND HELPERS (No changes from here down) ---
 function setupActionListeners() {
     channelsListElement.addEventListener('change', e => {
         if (e.target.classList.contains('channel-toggle')) handleChannelToggle(e.target);
@@ -147,7 +140,6 @@ function handleChannelToggle(toggle) {
     saveActiveChannels();
 }
 
-// --- RECORDING FUNCTIONS (No change here) ---
 function startRecording(button) {
     if (isRecording || !mediaRecorder || button.disabled) return;
     isRecording = true;
@@ -170,7 +162,6 @@ function stopRecording() {
     activeRecordingButton = null;
 }
 
-// --- LOCAL STORAGE HELPERS (No change here) ---
 function saveActiveChannels() {
     const activeChannels = Array.from(document.querySelectorAll('.channel-toggle:checked'))
                                 .map(toggle => toggle.dataset.channel);
@@ -182,5 +173,4 @@ function getSavedChannels() {
     return saved ? JSON.parse(saved) : [];
 }
 
-// --- START THE APP ---
 initialize();
