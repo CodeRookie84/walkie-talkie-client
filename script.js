@@ -1,4 +1,4 @@
-// walkie-talkie-client-main/script.js
+// script.js
 
 // --- CONFIGURATION ---
 const SERVER_URL = "https://walkie-talkie-server-9yu3.onrender.com";
@@ -17,6 +17,7 @@ let activeRecordingButton = null;
 
 // --- INITIALIZATION ---
 function initialize() {
+    console.log("Initializing Walkie-Talkie Client");
     populateChannels();
     setupSocketListeners();
     initializeMediaRecorder();
@@ -50,33 +51,34 @@ function setupSocketListeners() {
     socket.on('connect', () => {
         statusTextElement.textContent = 'Connected';
         statusLightElement.className = 'status-light connected';
-        getSavedChannels().forEach(channel => socket.emit('join-channel', channel));
+        console.log(`Connected to server with ID: ${socket.id}`);
+        // Re-join saved channels on connection
+        getSavedChannels().forEach(channel => {
+            console.log(`Auto-joining channel: ${channel}`);
+            socket.emit('join-channel', channel);
+        });
     });
 
     socket.on('disconnect', (reason) => {
         statusTextElement.textContent = 'Disconnected';
         statusLightElement.className = 'status-light disconnected';
+        console.log(`Disconnected from server. Reason: ${reason}`);
         if (isRecording) stopRecording(); 
     });
 
     socket.on('audio-message-from-server', (data) => {
-        // **THE FIX:** Check senderId to prevent playing our own audio (echo)
-        if (data.senderId === socket.id) {
-            return; // This is our own message, so ignore it.
-        }
-        
+        console.log(`Received audio for channel ${data.channel}. Playing...`);
         const audioBlob = new Blob([data.audioChunk]);
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
         audio.play();
 
         const channelItem = document.getElementById(`channel-${data.channel}`);
-        if (channelItem) { // Check if the element exists
+        if (channelItem) {
             channelItem.classList.add('receiving');
             statusLightElement.classList.add('receiving');
             audio.onended = () => {
                 channelItem.classList.remove('receiving');
-                // Only remove receiving from status light if no other audio is playing
                 if (!document.querySelector('.channel-item.receiving')) {
                     statusLightElement.classList.remove('receiving');
                 }
@@ -84,7 +86,6 @@ function setupSocketListeners() {
         }
     });
 }
-
 
 // --- MEDIA RECORDER LOGIC ---
 async function initializeMediaRecorder() {
@@ -98,6 +99,8 @@ async function initializeMediaRecorder() {
             const channel = activeRecordingButton.dataset.channel;
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
             
+            console.log(`Sending audio to channel: ${channel}`);
+            // Send audio as an object containing the channel and the data
             socket.emit('audio-message', {
                 channel: channel,
                 audioChunk: audioBlob
@@ -110,7 +113,6 @@ async function initializeMediaRecorder() {
         statusTextElement.textContent = 'Microphone access denied.';
     }
 }
-
 
 // --- EVENT LISTENERS AND HELPERS ---
 function setupActionListeners() {
@@ -134,10 +136,12 @@ function handleChannelToggle(toggle) {
     const channelItem = toggle.closest('.channel-item');
     const talkButton = channelItem.querySelector('.talk-button');
     if (toggle.checked) {
+        console.log(`Joining channel: ${channel}`);
         socket.emit('join-channel', channel);
         talkButton.disabled = false;
         channelItem.classList.add('active');
     } else {
+        console.log(`Leaving channel: ${channel}`);
         socket.emit('leave-channel', channel);
         talkButton.disabled = true;
         channelItem.classList.remove('active');
@@ -181,6 +185,4 @@ function getSavedChannels() {
     return saved ? JSON.parse(saved) : [];
 }
 
-initialize();```
-
-
+initialize();
