@@ -12,8 +12,8 @@ const channelsListElement = document.getElementById('channels-list');
 const socket = io(SERVER_URL);
 let mediaRecorder;
 let audioChunks = [];
-let isRecording = false; // Simple flag to track recording state
-let activeRecordingButton = null; // To know which button to update
+let isRecording = false;
+let activeRecordingButton = null;
 
 // --- INITIALIZATION ---
 function initialize() {
@@ -53,10 +53,10 @@ function setupSocketListeners() {
         getSavedChannels().forEach(channel => socket.emit('join-channel', channel));
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
+        console.log(`Socket disconnected. Reason: ${reason}`);
         statusTextElement.textContent = 'Disconnected';
         statusLightElement.className = 'status-light disconnected';
-        // If we disconnect while recording, reset the UI
         if (isRecording) stopRecording(); 
     });
 
@@ -75,16 +75,33 @@ function setupSocketListeners() {
     });
 }
 
-// --- MEDIA RECORDER LOGIC ---
+// --- MEDIA RECORDER LOGIC (MODIFIED) ---
 async function initializeMediaRecorder() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
-        mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+
+        // MODIFICATION: Specify the MIME type for better compatibility
+        const options = { mimeType: 'audio/ogg; codecs=opus' };
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+            console.log(`${options.mimeType} is not supported. Falling back to default.`);
+            mediaRecorder = new MediaRecorder(stream);
+        } else {
+            console.log(`Using supported MIME type: ${options.mimeType}`);
+            mediaRecorder = new MediaRecorder(stream, options);
+        }
+
+        mediaRecorder.ondataavailable = event => {
+            audioChunks.push(event.data);
+        };
+
         mediaRecorder.onstop = () => {
             if (!activeRecordingButton) return;
             const channel = activeRecordingButton.dataset.channel;
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+            
+            // FINAL DIAGNOSTIC LOG
+            console.log(`Attempting to send audio. Channel: ${channel}, Blob size: ${audioBlob.size}, MimeType: ${audioBlob.type}`);
+            
             socket.emit('audio-message', channel, audioBlob);
             audioChunks = [];
         };
@@ -94,24 +111,19 @@ async function initializeMediaRecorder() {
     }
 }
 
-// --- EVENT LISTENERS (REBUILT FOR RELIABILITY) ---
+// --- EVENT LISTENERS (No change here) ---
 function setupActionListeners() {
-    // Listen for toggles on the whole list
     channelsListElement.addEventListener('change', e => {
         if (e.target.classList.contains('channel-toggle')) handleChannelToggle(e.target);
     });
-    // Listen for mousedown on the whole list
     channelsListElement.addEventListener('mousedown', e => {
         const button = e.target.closest('.talk-button');
         if (button) startRecording(button);
     });
-    // Listen for touchstart on the whole list
     channelsListElement.addEventListener('touchstart', e => {
          const button = e.target.closest('.talk-button');
          if(button) { e.preventDefault(); startRecording(button); }
     });
-    
-    // --- THE KEY FIX: GLOBAL MOUSEUP AND TOUCHEND LISTENERS ---
     window.addEventListener('mouseup', stopRecording);
     window.addEventListener('touchend', stopRecording);
 }
@@ -129,39 +141,36 @@ function handleChannelToggle(toggle) {
         talkButton.disabled = true;
         channelItem.classList.remove('active');
         if (isRecording && activeRecordingButton === talkButton) {
-            stopRecording(); // Stop recording if user deactivates channel while talking
+            stopRecording();
         }
     }
     saveActiveChannels();
 }
 
-// --- RECORDING FUNCTIONS ---
+// --- RECORDING FUNCTIONS (No change here) ---
 function startRecording(button) {
     if (isRecording || !mediaRecorder || button.disabled) return;
-    
     isRecording = true;
     activeRecordingButton = button;
     mediaRecorder.start();
-    
     button.classList.add('recording');
     button.querySelector('i').className = 'fa-solid fa-record-vinyl';
 }
 
 function stopRecording() {
-    if (!isRecording) return; // Only run if we are actually recording
-    
-    mediaRecorder.stop();
-    
+    if (!isRecording) return;
+    if (mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+    }
     if (activeRecordingButton) {
         activeRecordingButton.classList.remove('recording');
         activeRecordingButton.querySelector('i').className = 'fa-solid fa-microphone';
     }
-
     isRecording = false;
     activeRecordingButton = null;
 }
 
-// --- LOCAL STORAGE HELPERS ---
+// --- LOCAL STORAGE HELPERS (No change here) ---
 function saveActiveChannels() {
     const activeChannels = Array.from(document.querySelectorAll('.channel-toggle:checked'))
                                 .map(toggle => toggle.dataset.channel);
