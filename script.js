@@ -1,3 +1,5 @@
+// walkie-talkie-client-main/script.js
+
 // --- CONFIGURATION ---
 const SERVER_URL = "https://walkie-talkie-server-9yu3.onrender.com";
 const CHANNELS = ["General", "Project Alpha", "Emergency", "Music Room"];
@@ -43,7 +45,7 @@ function populateChannels() {
     setupActionListeners();
 }
 
-// --- SOCKET.IO LISTENERS (MODIFIED) ---
+// --- SOCKET.IO LISTENERS ---
 function setupSocketListeners() {
     socket.on('connect', () => {
         statusTextElement.textContent = 'Connected';
@@ -57,39 +59,45 @@ function setupSocketListeners() {
         if (isRecording) stopRecording(); 
     });
 
-    // GOING BACK TO THE SIMPLE OBJECT MODEL
     socket.on('audio-message-from-server', (data) => {
-        // We expect `data` to be { channel: 'General', audioChunk: <...audio...> }
+        // **THE FIX:** Check senderId to prevent playing our own audio (echo)
+        if (data.senderId === socket.id) {
+            return; // This is our own message, so ignore it.
+        }
+        
         const audioBlob = new Blob([data.audioChunk]);
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
         audio.play();
+
         const channelItem = document.getElementById(`channel-${data.channel}`);
-        channelItem.classList.add('receiving');
-        statusLightElement.classList.add('receiving');
-        audio.onended = () => {
-            channelItem.classList.remove('receiving');
-            statusLightElement.classList.remove('receiving');
-        };
+        if (channelItem) { // Check if the element exists
+            channelItem.classList.add('receiving');
+            statusLightElement.classList.add('receiving');
+            audio.onended = () => {
+                channelItem.classList.remove('receiving');
+                // Only remove receiving from status light if no other audio is playing
+                if (!document.querySelector('.channel-item.receiving')) {
+                    statusLightElement.classList.remove('receiving');
+                }
+            };
+        }
     });
 }
 
 
-// --- MEDIA RECORDER LOGIC (MODIFIED) ---
+// --- MEDIA RECORDER LOGIC ---
 async function initializeMediaRecorder() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
         mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
 
-        // GOING BACK TO THE SIMPLE OBJECT MODEL
         mediaRecorder.onstop = () => {
             if (!activeRecordingButton) return;
             const channel = activeRecordingButton.dataset.channel;
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
             
-            // We are sending ONE object, just like we did before channels,
-            // but now that object contains the channel info.
             socket.emit('audio-message', {
                 channel: channel,
                 audioChunk: audioBlob
@@ -104,7 +112,7 @@ async function initializeMediaRecorder() {
 }
 
 
-// --- EVENT LISTENERS AND HELPERS (No changes from here down) ---
+// --- EVENT LISTENERS AND HELPERS ---
 function setupActionListeners() {
     channelsListElement.addEventListener('change', e => {
         if (e.target.classList.contains('channel-toggle')) handleChannelToggle(e.target);
@@ -173,4 +181,6 @@ function getSavedChannels() {
     return saved ? JSON.parse(saved) : [];
 }
 
-initialize();
+initialize();```
+
+Apply these two changes, deploy your server, and the application should now work exactly as you intend.
